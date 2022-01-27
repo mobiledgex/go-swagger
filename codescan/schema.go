@@ -302,10 +302,12 @@ func (s *schemaBuilder) buildFromType(tpe types.Type, tgt swaggerTypable) error 
 					tgt.Typed("string", sfnm)
 					return nil
 				}
-				if err := s.makeRef(decl, tgt); err != nil {
-					return err
-				}
-				return nil
+				// Expand substructs, rather than add reference.
+				// Expanding allows the description to be captured,
+				// but more importantly allows us to tailor the
+				// specifiable fields per API when the same object
+				// is used by multiple APIs.
+				return s.buildFromStruct(decl, utitpe, tgt.Schema(), make(map[string]string))
 			}
 		case *types.Interface:
 			if decl, ok := s.ctx.FindModel(tio.Pkg().Path(), tio.Name()); ok {
@@ -350,7 +352,7 @@ func (s *schemaBuilder) buildFromType(tpe types.Type, tgt swaggerTypable) error 
 				}
 			}
 			if decl, ok := s.ctx.FindModel(tio.Pkg().Path(), tio.Name()); ok {
-				if err := s.makeRef(decl, tgt); err != nil {
+				if err := s.makeEnclosedRef(decl, tgt); err != nil {
 					return err
 				}
 				return nil
@@ -890,6 +892,18 @@ func (s *schemaBuilder) makeRef(decl *entityDecl, prop swaggerTypable) error {
 	}
 	prop.SetRef(ref)
 	s.postDecls = append(s.postDecls, decl)
+	return nil
+}
+
+func (s *schemaBuilder) makeEnclosedRef(decl *entityDecl, prop swaggerTypable) error {
+	// enclose ref with "allOf" tp preserve instance description
+	if prop.Schema().AllOf == nil || len(prop.Schema().AllOf) == 0 {
+		var newSch spec.Schema
+		if err := s.makeRef(decl, schemaTypable{&newSch, 0}); err != nil {
+			return err
+		}
+		prop.Schema().AllOf = append(prop.Schema().AllOf, newSch)
+	}
 	return nil
 }
 
